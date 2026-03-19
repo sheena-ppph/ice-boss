@@ -9,14 +9,18 @@ const MAX_CAPACITY = { '5kg': 24, '2kg': 10, '1kg': 10 };
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const isClosingTime = new Date().getHours() >= 18;
+  const [showClosing, setShowClosing] = useState(isClosingTime);
   const [todayProduction, setTodayProduction] = useState({ bags5kg: 0, bags2kg: 0, bags1kg: 0 });
-  const [todaySales, setTodaySales] = useState({ total: 0, bags5kg: 0, bags2kg: 0, bags1kg: 0 });
+  const [todaySales, setTodaySales] = useState({ total: 0, bags5kg: 0, bags2kg: 0, bags1kg: 0, cash: 0, gcash: 0, free1kg: 0 });
   const [freezerStock, setFreezerStock] = useState({ bags5kg: 0, bags2kg: 0, bags1kg: 0 });
   const [bags, setBags] = useState([]);
   const [coolersToCollect, setCoolersToCollect] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [ebikeNext, setEbikeNext] = useState(null);
   const [salaryNext, setSalaryNext] = useState(null);
+  const [todayExpenseTotal, setTodayExpenseTotal] = useState(0);
+  const [todayProdTally, setTodayProdTally] = useState({ expectedKg: null, packedKg: 0 });
 
   useEffect(() => {
     loadDashboard();
@@ -41,8 +45,21 @@ export default function Dashboard() {
       bags5kg: acc.bags5kg + (s.bags5kg || 0),
       bags2kg: acc.bags2kg + (s.bags2kg || 0),
       bags1kg: acc.bags1kg + (s.bags1kg || 0),
-    }), { total: 0, bags5kg: 0, bags2kg: 0, bags1kg: 0 });
+      cash: acc.cash + (s.paymentMethod === 'cash' ? (s.totalAmount || 0) : 0),
+      gcash: acc.gcash + (s.paymentMethod === 'gcash' ? (s.totalAmount || 0) : 0),
+      free1kg: acc.free1kg + (s.free1kg || 0),
+    }), { total: 0, bags5kg: 0, bags2kg: 0, bags1kg: 0, cash: 0, gcash: 0, free1kg: 0 });
     setTodaySales(ts);
+
+    // Today's expenses
+    const todayExp = await db.expenses.where('date').equals(todayStr).toArray();
+    setTodayExpenseTotal(todayExp.reduce((sum, e) => sum + (e.amount || 0), 0));
+
+    // Production tally (expected kg vs packed kg)
+    const packedKg = tp.bags5kg * 5 + tp.bags2kg * 2 + tp.bags1kg * 1;
+    const expKgArr = prods.map(p => p.cycles != null && p.firstDropKilos ? p.cycles * p.firstDropKilos : null).filter(v => v !== null);
+    const expectedKg = expKgArr.length > 0 ? Math.round(expKgArr.reduce((a, b) => a + b, 0) * 10) / 10 : null;
+    setTodayProdTally({ expectedKg, packedKg });
 
     // Freezer stock: all production minus all sales
     const allProd = await db.production.toArray();
@@ -55,7 +72,7 @@ export default function Dashboard() {
     const totalSold = allSales.reduce((acc, s) => ({
       bags5kg: acc.bags5kg + (s.bags5kg || 0),
       bags2kg: acc.bags2kg + (s.bags2kg || 0),
-      bags1kg: acc.bags1kg + (s.bags1kg || 0),
+      bags1kg: acc.bags1kg + (s.bags1kg || 0) + (s.free1kg || 0),
     }), { bags5kg: 0, bags2kg: 0, bags1kg: 0 });
     const stock = {
       bags5kg: Math.max(0, totalProd.bags5kg - totalSold.bags5kg),
@@ -144,8 +161,139 @@ export default function Dashboard() {
   const stockBg = stockPct >= 60 ? 'bg-green-100' : stockPct >= 30 ? 'bg-yellow-100' : 'bg-red-100';
   const stockBarColor = stockPct >= 60 ? 'bg-green-500' : stockPct >= 30 ? 'bg-yellow-500' : 'bg-red-500';
 
+  const netToday = todaySales.total - todayExpenseTotal;
+
   return (
     <div className="page-content p-4 space-y-4">
+      {/* Closing Report Toggle */}
+      <button
+        onClick={() => setShowClosing(v => !v)}
+        className={`w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all min-h-[48px] ${
+          isClosingTime
+            ? 'bg-blue-700 text-white shadow-md'
+            : 'bg-gray-100 text-gray-600 border border-gray-200'
+        }`}
+      >
+        <span>{isClosingTime ? '🌙' : '📋'}</span>
+        {showClosing ? 'Hide Closing Report' : isClosingTime ? 'View Closing Report (6PM)' : 'View Closing Report'}
+      </button>
+
+      {/* Closing Report */}
+      {showClosing && (
+        <Card className="p-4 border-2 border-blue-200">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-bold text-blue-800">Closing Report</h2>
+            <span className="text-xs text-gray-400">{format(new Date(), 'MMM d, yyyy')}</span>
+          </div>
+
+          {/* Freezer Stock Remaining */}
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Freezer Stock Remaining</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { key: 'bags5kg', label: '5kg', max: MAX_CAPACITY['5kg'] },
+                { key: 'bags2kg', label: '2kg', max: MAX_CAPACITY['2kg'] },
+                { key: 'bags1kg', label: '1kg', max: MAX_CAPACITY['1kg'] },
+              ].map(({ key, label, max }) => {
+                const val = freezerStock[key];
+                const pct = Math.min(100, Math.round((val / max) * 100));
+                const col = pct >= 60 ? 'text-green-600' : pct >= 30 ? 'text-yellow-600' : 'text-red-600';
+                return (
+                  <div key={key} className="text-center bg-gray-50 rounded-lg p-2">
+                    <p className="text-xs text-gray-400">{label}</p>
+                    <p className={`text-xl font-bold ${col}`}>{val}</p>
+                    <p className="text-xs text-gray-400">/ {max}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Sales Summary */}
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Today's Sales</p>
+            <div className="bg-green-50 rounded-lg p-3 mb-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Total Revenue</span>
+                <span className="text-xl font-bold text-green-700">₱{todaySales.total.toLocaleString()}</span>
+              </div>
+              <div className="flex gap-3 mt-1">
+                <span className="text-xs text-gray-500">💵 Cash: ₱{todaySales.cash.toLocaleString()}</span>
+                <span className="text-xs text-gray-500">📱 GCash: ₱{todaySales.gcash.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              {[['5kg', todaySales.bags5kg], ['2kg', todaySales.bags2kg], ['1kg', todaySales.bags1kg]].map(([size, qty]) => (
+                <div key={size} className="bg-gray-50 rounded-lg p-2">
+                  <p className="text-gray-400">{size} sold</p>
+                  <p className="font-bold text-gray-700">{qty}</p>
+                </div>
+              ))}
+            </div>
+            {todaySales.free1kg > 0 && (
+              <p className="text-xs text-orange-600 mt-1 text-center">+ {todaySales.free1kg} free 1kg bag{todaySales.free1kg > 1 ? 's' : ''} given out</p>
+            )}
+          </div>
+
+          {/* Production Tally */}
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Production Tally</p>
+            <div className="bg-blue-50 rounded-lg p-3 space-y-1">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Bags Produced</span>
+                <span className="font-semibold text-blue-700">
+                  {todayProduction.bags5kg}×5kg · {todayProduction.bags2kg}×2kg · {todayProduction.bags1kg}×1kg
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Packed kg</span>
+                <span className="font-semibold text-blue-800">{todayProdTally.packedKg} kg</span>
+              </div>
+              {todayProdTally.expectedKg !== null && (
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-gray-600">Expected kg</span>
+                  <span className="font-semibold text-gray-700">{todayProdTally.expectedKg} kg</span>
+                </div>
+              )}
+              {todayProdTally.expectedKg !== null && (
+                <div className={`text-xs font-semibold text-center mt-1 py-1 rounded ${
+                  Math.abs(todayProdTally.packedKg - todayProdTally.expectedKg) <= 2
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {Math.abs(todayProdTally.packedKg - todayProdTally.expectedKg) <= 2
+                    ? '✓ Tally matches'
+                    : `⚠ Gap: ${Math.abs(todayProdTally.packedKg - todayProdTally.expectedKg)} kg difference`}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Expenses & Net */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Net Today</p>
+            <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Revenue</span>
+                <span className="text-green-600 font-semibold">+₱{todaySales.total.toLocaleString()}</span>
+              </div>
+              {todayExpenseTotal > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Expenses</span>
+                  <span className="text-red-500 font-semibold">-₱{todayExpenseTotal.toLocaleString()}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm border-t border-gray-200 pt-1 mt-1">
+                <span className="font-bold text-gray-700">Net</span>
+                <span className={`font-bold text-lg ${netToday >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                  ₱{netToday.toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Alerts */}
       {alerts.length > 0 && (
         <div className="space-y-2">
