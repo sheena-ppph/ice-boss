@@ -84,6 +84,12 @@ export default function Production() {
   const cycles = (duration !== null && form.firstDropMins && parseInt(form.firstDropMins) > 0)
     ? Math.floor(duration / parseInt(form.firstDropMins))
     : null;
+  const estimatedKilos = (cycles !== null && form.firstDropKilos && parseFloat(form.firstDropKilos) > 0)
+    ? Math.round(cycles * parseFloat(form.firstDropKilos) * 10) / 10
+    : null;
+  const packedKilos = (parseInt(form.bags5kg) || 0) * 5
+    + (parseInt(form.bags2kg) || 0) * 2
+    + (parseInt(form.bags1kg) || 0) * 1;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -214,11 +220,19 @@ export default function Production() {
                 />
               </div>
             </div>
-            {/* Cycles display */}
+            {/* Cycles + Total Kilos display */}
             {cycles !== null && (
-              <div className="mt-2 bg-green-50 rounded-lg px-3 py-2 flex items-center justify-between">
-                <span className="text-xs text-green-600 font-medium">Estimated Cycles</span>
-                <span className="text-sm font-bold text-green-800">{cycles} cycles</span>
+              <div className="mt-2 space-y-1">
+                <div className="bg-green-50 rounded-lg px-3 py-2 flex items-center justify-between">
+                  <span className="text-xs text-green-600 font-medium">Estimated Cycles</span>
+                  <span className="text-sm font-bold text-green-800">{cycles} cycles</span>
+                </div>
+                {estimatedKilos !== null && (
+                  <div className="bg-green-100 rounded-lg px-3 py-2 flex items-center justify-between">
+                    <span className="text-xs text-green-700 font-medium">Expected Total Kilos</span>
+                    <span className="text-sm font-bold text-green-900">{estimatedKilos} kg</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -246,6 +260,35 @@ export default function Production() {
               ))}
             </div>
           </div>
+
+          {/* Tally check */}
+          {estimatedKilos !== null && packedKilos > 0 && (
+            <div className={`rounded-lg px-3 py-2.5 ${
+              packedKilos === estimatedKilos
+                ? 'bg-green-50 border border-green-200'
+                : Math.abs(packedKilos - estimatedKilos) <= estimatedKilos * 0.05
+                  ? 'bg-yellow-50 border border-yellow-200'
+                  : 'bg-red-50 border border-red-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-700">Tally Check</span>
+                <span className={`text-xs font-bold ${
+                  packedKilos === estimatedKilos ? 'text-green-700'
+                  : Math.abs(packedKilos - estimatedKilos) <= estimatedKilos * 0.05 ? 'text-yellow-700'
+                  : 'text-red-700'
+                }`}>
+                  {packedKilos === estimatedKilos ? '✓ Exact match' :
+                    packedKilos > estimatedKilos
+                      ? `+${Math.round((packedKilos - estimatedKilos) * 10) / 10} kg over`
+                      : `${Math.round((packedKilos - estimatedKilos) * 10) / 10} kg short`}
+                </span>
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-xs text-gray-500">Expected: <b>{estimatedKilos} kg</b></span>
+                <span className="text-xs text-gray-500">Packed: <b>{packedKilos} kg</b></span>
+              </div>
+            </div>
+          )}
 
           {/* Notes */}
           <div>
