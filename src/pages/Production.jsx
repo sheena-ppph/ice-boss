@@ -4,6 +4,7 @@ import db from '../db/database';
 import Card from '../components/ui/Card';
 
 const MAX_CAPACITY = { '5kg': 24, '2kg': 10, '1kg': 10 };
+const MAX_CAPACITY_2 = { '5kg': 0, '2kg': 0, '1kg': 0 }; // 2nd freezer - TBD
 
 function timeToMinutes(t) {
   if (!t) return null;
@@ -53,8 +54,15 @@ export default function Production() {
   const [freezerStock, setFreezerStock] = useState({ bags5kg: 0, bags2kg: 0, bags1kg: 0 });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [freezer2Cap, setFreezer2Cap] = useState({ bags5kg: 0, bags2kg: 0, bags1kg: 0 });
+  const [editFreezer2, setEditFreezer2] = useState(false);
+  const [freezer2Input, setFreezer2Input] = useState({ bags5kg: '', bags2kg: '', bags1kg: '' });
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+    const saved2 = localStorage.getItem('freezer2Cap');
+    if (saved2) setFreezer2Cap(JSON.parse(saved2));
+  }, []);
 
   async function loadData() {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -71,7 +79,7 @@ export default function Production() {
     const totalSold = allSales.reduce((acc, s) => ({
       bags5kg: acc.bags5kg + (s.bags5kg || 0),
       bags2kg: acc.bags2kg + (s.bags2kg || 0),
-      bags1kg: acc.bags1kg + (s.bags1kg || 0),
+      bags1kg: acc.bags1kg + (s.bags1kg || 0) + (s.free1kg || 0),
     }), { bags5kg: 0, bags2kg: 0, bags1kg: 0 });
     setFreezerStock({
       bags5kg: Math.max(0, totalProd.bags5kg - totalSold.bags5kg),
@@ -315,13 +323,15 @@ export default function Production() {
       {/* Freezer Stock */}
       <Card className="p-4">
         <h2 className="text-base font-bold text-gray-800 mb-3">Freezer Stock</h2>
-        <div className="flex items-center gap-3 mb-3">
+        <div className="flex items-center gap-3 mb-1">
           <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
             <div className={`h-full rounded-full transition-all ${stockColor}`} style={{ width: `${stockPct}%` }} />
           </div>
           <span className="text-sm font-bold text-gray-700">{stockPct}%</span>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        {/* Freezer 1 */}
+        <p className="text-xs font-semibold text-gray-400 mb-1 mt-2">Chest Freezer 1</p>
+        <div className="grid grid-cols-3 gap-3 mb-3">
           {[
             { key: 'bags5kg', label: '5kg', max: MAX_CAPACITY['5kg'] },
             { key: 'bags2kg', label: '2kg', max: MAX_CAPACITY['2kg'] },
@@ -339,6 +349,47 @@ export default function Production() {
             );
           })}
         </div>
+        {/* Freezer 2 */}
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-xs font-semibold text-gray-400">Chest Freezer 2 (Small)</p>
+          <button onClick={() => { setFreezer2Input({ bags5kg: String(freezer2Cap.bags5kg), bags2kg: String(freezer2Cap.bags2kg), bags1kg: String(freezer2Cap.bags1kg) }); setEditFreezer2(!editFreezer2); }}
+            className="text-xs text-blue-600 font-medium">
+            {editFreezer2 ? 'Cancel' : 'Set Capacity'}
+          </button>
+        </div>
+        {editFreezer2 && (
+          <div className="mb-2 bg-blue-50 rounded-lg p-3">
+            <p className="text-xs text-gray-500 mb-2">Set max bags per size:</p>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              {[{k:'bags5kg',l:'5kg'},{k:'bags2kg',l:'2kg'},{k:'bags1kg',l:'1kg'}].map(({k,l}) => (
+                <div key={k}>
+                  <label className="block text-xs text-gray-400 mb-1 text-center">{l}</label>
+                  <input type="number" min="0" placeholder="0" value={freezer2Input[k]}
+                    onChange={e => setFreezer2Input(f => ({...f, [k]: e.target.value}))}
+                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              ))}
+            </div>
+            <button onClick={() => {
+              const cap = { bags5kg: parseInt(freezer2Input.bags5kg)||0, bags2kg: parseInt(freezer2Input.bags2kg)||0, bags1kg: parseInt(freezer2Input.bags1kg)||0 };
+              setFreezer2Cap(cap);
+              localStorage.setItem('freezer2Cap', JSON.stringify(cap));
+              setEditFreezer2(false);
+            }} className="w-full py-2 bg-blue-700 text-white rounded-lg text-xs font-semibold">Save</button>
+          </div>
+        )}
+        {(freezer2Cap.bags5kg + freezer2Cap.bags2kg + freezer2Cap.bags1kg) === 0 ? (
+          <p className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 rounded-lg">Capacity not set yet — tap "Set Capacity" when ready</p>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            {[{key:'bags5kg',label:'5kg'},{key:'bags2kg',label:'2kg'},{key:'bags1kg',label:'1kg'}].map(({key,label}) => (
+              <div key={key} className="text-center bg-gray-50 rounded-lg p-3">
+                <p className="text-xs text-gray-500 font-medium">{label}</p>
+                <p className="text-xs text-gray-400">/ {freezer2Cap[key]}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       {/* Today's Logs */}
@@ -374,13 +425,12 @@ export default function Production() {
                         )}
                       </div>
                     )}
-                    {/* 1st drop + cycles */}
+                    {/* 1st drop + cycles + expected kilos */}
                     {(log.firstDropMins || log.cycles != null) && (
-                      <div className="flex gap-3 mb-1">
+                      <div className="flex flex-wrap gap-2 mb-1 items-center">
                         {log.firstDropMins && (
                           <span className="text-xs text-green-700">
-                            1st Drop: {log.firstDropMins}min
-                            {log.firstDropKilos ? ` / ${log.firstDropKilos}kg` : ''}
+                            1st Drop: {log.firstDropMins}min{log.firstDropKilos ? ` / ${log.firstDropKilos}kg` : ''}
                           </span>
                         )}
                         {log.cycles != null && (
@@ -388,10 +438,20 @@ export default function Production() {
                             {log.cycles} cycles
                           </span>
                         )}
+                        {log.cycles != null && log.firstDropKilos && (
+                          <span className="text-xs font-bold text-blue-700">
+                            = {Math.round(log.cycles * log.firstDropKilos * 10) / 10} kg expected
+                          </span>
+                        )}
                       </div>
                     )}
+                    {/* Bags + packed kilos */}
                     <p className="text-xs text-gray-600">
                       5kg: {log.bags5kg} · 2kg: {log.bags2kg} · 1kg: {log.bags1kg}
+                      {' '}
+                      <span className="font-semibold text-gray-700">
+                        = {(log.bags5kg||0)*5 + (log.bags2kg||0)*2 + (log.bags1kg||0)} kg packed
+                      </span>
                     </p>
                     {log.notes && <p className="text-xs text-gray-500 mt-0.5 italic">{log.notes}</p>}
                   </div>

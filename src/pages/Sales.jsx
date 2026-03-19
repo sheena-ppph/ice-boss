@@ -13,6 +13,7 @@ export default function Sales() {
     bags5kg: '',
     bags2kg: '',
     bags1kg: '',
+    free1kg: '',
     paymentMethod: 'cash',
     notes: '',
   });
@@ -39,7 +40,8 @@ export default function Sales() {
   async function handleSubmit(e) {
     e.preventDefault();
     const total = calcTotal();
-    if (total === 0) return;
+    const free = parseInt(form.free1kg) || 0;
+    if (total === 0 && free === 0) return;
     setSaving(true);
     await db.sales.add({
       date: form.date,
@@ -47,6 +49,7 @@ export default function Sales() {
       bags5kg: parseInt(form.bags5kg) || 0,
       bags2kg: parseInt(form.bags2kg) || 0,
       bags1kg: parseInt(form.bags1kg) || 0,
+      free1kg: free,
       totalAmount: total,
       paymentMethod: form.paymentMethod,
       notes: form.notes,
@@ -56,6 +59,7 @@ export default function Sales() {
       bags5kg: '',
       bags2kg: '',
       bags1kg: '',
+      free1kg: '',
       notes: '',
       time: format(new Date(), 'HH:mm'),
     }));
@@ -136,6 +140,27 @@ export default function Sales() {
                 />
               </div>
             ))}
+          </div>
+
+          {/* Free bags */}
+          <div className="bg-orange-50 border border-orange-100 rounded-lg p-3">
+            <label className="block text-xs font-semibold text-orange-700 mb-2">Free / Giveaway (₱0)</label>
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-gray-500">1kg bags</label>
+              <input
+                type="number"
+                min="0"
+                placeholder="0"
+                value={form.free1kg}
+                onChange={e => setForm(f => ({ ...f, free1kg: e.target.value }))}
+                className="w-24 border border-orange-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 text-center"
+              />
+              {(parseInt(form.free1kg) || 0) > 0 && (
+                <span className="text-xs text-orange-600 font-medium">
+                  {form.free1kg} bag{parseInt(form.free1kg) > 1 ? 's' : ''} free
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Total preview */}
@@ -246,6 +271,7 @@ export default function Sales() {
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
                     {s.bags5kg > 0 ? `5kg×${s.bags5kg} ` : ''}{s.bags2kg > 0 ? `2kg×${s.bags2kg} ` : ''}{s.bags1kg > 0 ? `1kg×${s.bags1kg}` : ''}
+                    {s.free1kg > 0 && <span className="text-orange-600"> · Free 1kg×{s.free1kg}</span>}
                   </p>
                   {s.notes && <p className="text-xs text-gray-400 italic">{s.notes}</p>}
                 </div>
